@@ -1,3 +1,6 @@
+use std::convert::TryFrom;
+use std::convert::TryInto;
+
 pub struct CPU {
     pub opcode: u16, // operation code;
     pub memory: [u8; 4096], // memory..duh;
@@ -70,7 +73,7 @@ impl CPU {
 
                     _ => println!("Execute machine language subroutine at adress {}{}{}", op[1], op[2], op[3]),
                 },
-            1  => println!("Jump to adress NNN"),
+            1  => self.pc = self.opcode & 0x0FFF,
             2  => println!("Execute subroutine starting at address NNN"),
             3  => println!("Skip the following instruction if the value of register VX == NN"),
             4  => println!("Skip the following instruction if the value of register VX != NN"),
@@ -128,6 +131,21 @@ impl CPU {
                 }
             _  => println!("No opcode!"),
         }
+    }
 
+    pub fn dec_to_hex(&mut self, decimal: u16) -> (){
+        let mut quotient = decimal;
+        let mut remainder: u16;
+        let mut hexadecimal: Vec<u16> = Vec::new();
+
+        while quotient != 0 {
+            remainder = quotient % 16;
+
+            hexadecimal.push(remainder);
+
+            quotient = quotient / 16;
+        }
+
+        
     }
 }

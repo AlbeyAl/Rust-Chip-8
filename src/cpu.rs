@@ -1,17 +1,14 @@
-use std::convert::TryFrom;
-use std::convert::TryInto;
-
 pub struct CPU {
     pub opcode: u16, // operation code;
     pub memory: [u8; 4096], // memory..duh;
     pub v: [u8; 16], // V registers that allow manipulation of data;
-    pub i: u16, // 
-    pub pc: u16, // program counter;
+    pub i: usize, // 
+    pub pc: usize, // program counter;
     pub gfx: [[u8; 64]; 32], // graphics array that maps out pixels on or off;
     pub delay_timer: u8,
     pub sound_timer: u8,
     pub stack: [u16; 16],
-    pub sp: u16,
+    pub sp: usize,
     pub key: [u8; 16]
 }
 
@@ -59,27 +56,50 @@ impl CPU {
         op[2] = (self.opcode & 0x00F0) >>  4;
         op[3] =  self.opcode & 0x000F       ;
 
-        println!("Opcode: {}{}{}{}", (op[0]) as usize, (op[1]) as usize, (op[2]) as usize, (op[3]) as usize);
+        // Top of the stack is the current sp (stack pointer variable). This is the topmost part of the stack;
 
         match op[0] {
             0  => 
                 match op[1] {
                     0 => 
-                        match op[3] {
-                            0 => println!("Clear the screen"),
-                            14 => println!("Return from a subroutine"),
-                            _ => println!("Execute machine language subroutine at adress {}{}{}", op[1], op[2], op[3]),
+                        match (op[2], op[3]) {
+                            (14,  0) => println!("Clear the screen"),
+                            (14, 14) => { 
+                                self.pc = self.stack[self.sp] as usize;
+                                self.sp -= 1;
+                            }, // Return from a subroutine;
+                            _        => println!("Execute machine language subroutine at adress {}{}{}", op[1], op[2], op[3]), // This instruction is ignored due to the fact that is only used on older machine computers;
                         },
 
-                    _ => println!("Execute machine language subroutine at adress {}{}{}", op[1], op[2], op[3]),
+                    _ => println!("No equivalent operation for supplied opcode!!"),
                 },
-            1  => self.pc = self.opcode & 0x0FFF,
-            2  => println!("Execute subroutine starting at address NNN"),
-            3  => println!("Skip the following instruction if the value of register VX == NN"),
-            4  => println!("Skip the following instruction if the value of register VX != NN"),
-            5  => println!("Skip the following instruction if the value of register VX is equal to the value of register VY"),
-            6  => println!("Store number NN in register VX"),
-            7  => println!("Add the value NN to register VX"),
+            1  => self.pc = (self.opcode & 0x0FFF) as usize,
+            2  => { // Call subroutine at nnn;
+                self.sp += 1;
+                self.stack[self.sp] = self.pc as u16;
+                self.pc = (self.opcode & 0x0FFF) as usize;
+            }, 
+            3  => { // Skip the next instruction if Vx == kk;
+                if self.v[op[1] as usize] == (self.opcode & 0x00FF) as u8 {
+                    self.pc += 2;
+                }
+            },
+            4  => { // Skip the next instruction if Vx != kk;
+                if self.v[op[1] as usize] != (self.opcode & 0x00FF) as u8 {
+                    self.pc += 2;
+                }
+            },
+            5  => { // Skip the next instruction if Vx == Vy;
+                if self.v[op[1] as usize] == self.v[op[2] as usize] {
+                    self.pc += 2;
+                }
+            },
+            6  => { // Set Vx == kk;
+                self.v[op[1] as usize] = (self.opcode & 0x00FF) as u8;
+            },
+            7  => { // Set Vx = (Vx + kk);
+                self.v[op[1] as usize] = self.v[op[1] as usize] + (self.opcode & 0x00FF) as u8; // <-- test use -->
+            },
             8  => 
                 match op[3] {
                     0  => println!("Store the value of register VY in register VX"),
@@ -101,7 +121,7 @@ impl CPU {
                     14 => println!("Store the value of register VY shifted left one bit in register VX\n
                                     Set register VF to the most significant bit prior the shift\n
                                     VY is unchanged"),
-                    _  => println!("No equivalent operation for supplied opcode"),
+                    _  => println!("No equivalent operation for supplied opcode!"),
                 },
             9  => println!("Skip the following instruction if the value of register VX != VY"),
             10 => println!("Store memory address NNN in register index I"),
@@ -112,7 +132,7 @@ impl CPU {
                 match op[2] {
                     9  => println!("Skip the following instruction if the key corresponding to the hex value currently stored in register VX is pressed"),
                     10 => println!("Skip the following instruction if the key corresponding to the hex value currrently stored in register VX is not pressed"),
-                    _  => println!("No equivalent operation for supplied opcode")
+                    _  => println!("No equivalent operation for supplied opcode!")
                 },
             15 =>
                 match (op[2], op[3]) {
@@ -127,7 +147,7 @@ impl CPU {
                                             I is set to I + X + 1 after operation"),
                     (6,  5) => println!("Fill registers V0 to VX inclusive with the values stored in memory at address I\n
                                             I is set to I + X + 1 after operation"),
-                    _       => println!("No equivalent operation for supplied opcode")
+                    _       => println!("No equivalent operation for supplied opcode!")
                 }
             _  => println!("No opcode!"),
         }
@@ -146,6 +166,6 @@ impl CPU {
             quotient = quotient / 16;
         }
 
-        
+        // not entirely sure how to return the vec! as a usize;
     }
 }

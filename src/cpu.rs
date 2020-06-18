@@ -48,13 +48,13 @@ impl CPU {
     }
 
     pub fn process_opcode(&mut self) {
-        let mut op: [u16; 4] = [0; 4];
+        let mut op: [usize; 4] = [0; 4];
 
         // Split opcode into a slice:
-        op[0] = (self.opcode & 0xF000) >> 12;
-        op[1] = (self.opcode & 0x0F00) >>  8;
-        op[2] = (self.opcode & 0x00F0) >>  4;
-        op[3] =  self.opcode & 0x000F       ;
+        op[0] = ((self.opcode & 0xF000) >> 12) as usize;
+        op[1] = ((self.opcode & 0x0F00) >>  8) as usize;
+        op[2] = ((self.opcode & 0x00F0) >>  4) as usize;
+        op[3] = ( self.opcode & 0x000F)        as usize;
 
         // Top of the stack is the current sp (stack pointer variable). This is the topmost part of the stack;
 
@@ -63,64 +63,99 @@ impl CPU {
                 match op[1] {
                     0 => 
                         match (op[2], op[3]) {
-                            (14,  0) => println!("Clear the screen"),
-                            (14, 14) => { 
+                            (14,  0) => { // Clear screen;
+                                for x in 0..64 {
+                                    for y in 0..32 {
+                                        self.gfx[x][y] = 0;
+                                    }
+                                }
+                            },
+                            (14, 14) => {  // Return from a subroutine;
                                 self.pc = self.stack[self.sp] as usize;
                                 self.sp -= 1;
-                            }, // Return from a subroutine;
+                            },
                             _        => println!("Execute machine language subroutine at adress {}{}{}", op[1], op[2], op[3]), // This instruction is ignored due to the fact that is only used on older machine computers;
                         },
 
                     _ => println!("No equivalent operation for supplied opcode!!"),
                 },
-            1  => self.pc = (self.opcode & 0x0FFF) as usize,
+            1  => self.pc = (self.opcode & 0x0FFF) as usize, // Jump to location nnn;
             2  => { // Call subroutine at nnn;
                 self.sp += 1;
                 self.stack[self.sp] = self.pc as u16;
                 self.pc = (self.opcode & 0x0FFF) as usize;
             }, 
             3  => { // Skip the next instruction if Vx == kk;
-                if self.v[op[1] as usize] == (self.opcode & 0x00FF) as u8 {
+                if self.v[op[1]] == (self.opcode & 0x00FF) as u8 {
                     self.pc += 2;
                 }
             },
             4  => { // Skip the next instruction if Vx != kk;
-                if self.v[op[1] as usize] != (self.opcode & 0x00FF) as u8 {
+                if self.v[op[1]] != (self.opcode & 0x00FF) as u8 {
                     self.pc += 2;
                 }
             },
             5  => { // Skip the next instruction if Vx == Vy;
-                if self.v[op[1] as usize] == self.v[op[2] as usize] {
+                if self.v[op[1]] == self.v[op[2]] {
                     self.pc += 2;
                 }
             },
             6  => { // Set Vx == kk;
-                self.v[op[1] as usize] = (self.opcode & 0x00FF) as u8;
+                self.v[op[1]] = (self.opcode & 0x00FF) as u8;
             },
             7  => { // Set Vx = (Vx + kk);
-                self.v[op[1] as usize] = self.v[op[1] as usize] + (self.opcode & 0x00FF) as u8; // <-- test use -->
+                self.v[op[1]] = self.v[op[1]] + (self.opcode & 0x00FF) as u8; // <-- test use -->
             },
             8  => 
                 match op[3] {
-                    0  => println!("Store the value of register VY in register VX"),
-                    1  => println!("Set VX to VX /OR/ VY"),
-                    2  => println!("Set VX to VX /AND/ VY"),
-                    3  => println!("Set VX to VX /XOR/ VY"),
-                    4  => println!("Add the value of register VY to register VX\n
-                                    Set VF to 01 if a carry occurs\n
-                                    Set VF to 00 if a carry doesn't occur"),
-                    5  => println!("Subtract the value of register VY from register VX\n
-                                    Set VF to 00 if a borrow occurs\n
-                                    Set VF to 01 if a borrow doesn't occur"),
-                    6  => println!("Store the value of register VY shifted right one bit in register VX\n
-                                    Set register VF to the least significant bit prior to the shift\n
-                                    VY is unchanged"),
-                    7  => println!("Set register VX to the value of VY minus VX\n
-                                    Set VF to 00 if a borrow occurs\n
-                                    Set VF to 01 if a borrow doesn't occur"),
-                    14 => println!("Store the value of register VY shifted left one bit in register VX\n
-                                    Set register VF to the most significant bit prior the shift\n
-                                    VY is unchanged"),
+                    0  => { // Set Vx = Vy;
+                        self.v[op[1]] = self.v[op[2]];
+                    },
+                    1  => { // Set Vx = Vy OR Vy;
+                        self.v[op[1]] = self.v[op[1]] | self.v[op[2]]; 
+                    },
+                    2  => { // Set Vx = Vx AND Vy;
+                        self.v[op[1]] = self.v[op[1]] & self.v[op[2]];
+                    },
+                    3  => { // Set Vx = Vx XOR Vy;
+                        self.v[op[1]] = self.v[op[1]] ^ self.v[op[2]];
+                    },
+                    4  => { // Set Vx = Vx + Vy, set VF = carry; This code block was brilliantly written by ColinEberhardt (https://github.com/ColinEberhardt/wasm-rust-chip8); 
+                        let (sum, carry) = self.v[op[1]].overflowing_add(self.v[op[2]]);
+                        self.v[op[1]] = sum;
+
+                        match carry {
+                            true  => self.v[15] = 0,
+                            false => self.v[15] = 1,
+                        }
+                    },
+                    5  => { // Set Vx = Vx - Vy, set VF = carry; This code block was brilliantly written by ColinEberhardt (https://github.com/ColinEberhardt/wasm-rust-chip8);
+                        let (diff, carry) = self.v[op[1]].overflowing_sub(self.v[op[2]]);
+                        self.v[op[1]] = diff;
+
+                        match carry {
+                            true  => self.v[15] = 0,
+                            false => self.v[15] = 1,
+                        }
+                    },
+                    6  => { // Set Vx = Vx >> 1; This code block was brilliantly written by ColinEberhardt (https://github.com/ColinEberhardt/wasm-rust-chip8);
+                        self.v[op[1]] = self.v[op[1]] >> 1;
+                        self.v[15] = self.v[op[1]] & 0x1;
+                        self.v[op[1]] = self.v[op[1]] / 2;
+                    },
+                    7  => { // Set Vx = Vy - Vx, set VF = NOT borrow;
+                        let (diff, carry) = self.v[op[2]].overflowing_sub(self.v[op[1]]);
+                        self.v[op[1]] = diff;
+
+                        match carry {
+                            true  => self.v[15] = 0,
+                            false => self.v[15] = 1,
+                        }
+                    },
+                    14 => { // Set Vx = Vx << 1;
+                        self.v[op[1]] = self.v[op[1]] << 1;
+                        self.v[15] = self.v[op[1]] & 0x80;
+                    },
                     _  => println!("No equivalent operation for supplied opcode!"),
                 },
             9  => println!("Skip the following instruction if the value of register VX != VY"),

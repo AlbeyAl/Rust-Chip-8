@@ -1,3 +1,5 @@
+use rand::Rng;
+
 pub struct CPU {
     pub opcode: u16, // operation code;
     pub memory: [u8; 4096], // memory..duh;
@@ -47,7 +49,8 @@ impl CPU {
         }
     }
 
-    pub fn process_opcode(&mut self) {
+    pub fn process_opcode(&mut self, _opcode: u16) {
+        self.opcode = _opcode;
         let mut op: [usize; 4] = [0; 4];
 
         // Split opcode into a slice:
@@ -120,7 +123,7 @@ impl CPU {
                     3  => { // Set Vx = Vx XOR Vy;
                         self.v[op[1]] = self.v[op[1]] ^ self.v[op[2]];
                     },
-                    4  => { // Set Vx = Vx + Vy, set VF = carry; This code block was brilliantly written by ColinEberhardt (https://github.com/ColinEberhardt/wasm-rust-chip8); 
+                    4  => { // Set Vx = Vx + Vy, set VF = carry;
                         let (sum, carry) = self.v[op[1]].overflowing_add(self.v[op[2]]);
                         self.v[op[1]] = sum;
 
@@ -129,7 +132,7 @@ impl CPU {
                             false => self.v[15] = 1,
                         }
                     },
-                    5  => { // Set Vx = Vx - Vy, set VF = carry; This code block was brilliantly written by ColinEberhardt (https://github.com/ColinEberhardt/wasm-rust-chip8);
+                    5  => { // Set Vx = Vx - Vy, set VF = carry;
                         let (diff, carry) = self.v[op[1]].overflowing_sub(self.v[op[2]]);
                         self.v[op[1]] = diff;
 
@@ -138,7 +141,7 @@ impl CPU {
                             false => self.v[15] = 1,
                         }
                     },
-                    6  => { // Set Vx = Vx >> 1; This code block was brilliantly written by ColinEberhardt (https://github.com/ColinEberhardt/wasm-rust-chip8);
+                    6  => { // Set Vx = Vx >> 1;
                         self.v[op[1]] = self.v[op[1]] >> 1;
                         self.v[15] = self.v[op[1]] & 0x1;
                         self.v[op[1]] = self.v[op[1]] / 2;
@@ -158,49 +161,105 @@ impl CPU {
                     },
                     _  => println!("No equivalent operation for supplied opcode!"),
                 },
-            9  => println!("Skip the following instruction if the value of register VX != VY"),
-            10 => println!("Store memory address NNN in register index I"),
-            11 => println!("Jump to address NNN + V0"),
-            12 => println!("Set VX to a random number with a mask of NN"),
-            13 => println!("Draw a sprite at location VX, VY with N bytes of sprite data starting at the address stored in I"),
+            9  => { // Skip next instruction if Vx != Vy;
+                if self.v[op[1]] != self.v[op[2]] {
+                    self.pc += 2;
+                }
+            },
+            10 => { // Set I = nnn;
+                self.i = (self.opcode & 0x0FFF) as usize;
+            },
+            11 => { // Jump to location nnn + V0;
+                self.pc = ((self.opcode & 0x0FFF) + (self.v[0]) as u16) as usize;
+            },
+            12 => { // Set Vx = random byte AND kk;
+                self.v[op[1]] = random_byte() & (self.opcode & 0x0FF) as u8;
+            },
+            13 => { // Display n-byte sprite starting at memory location I set at (Vx, Vy), and then set VF = collision;
+                for i in 0..op[3] {
+                    let pixels: Vec<u8> = Vec::new();
+
+                    for j in 0..8 {
+                        let _i: usize = i;
+                        let _j: usize = j;
+
+                        let x = (_j + self.v[op[1]] as usize) % 64;
+                        let y = (_i + self.v[op[2]] as usize) % 32;
+
+                        if pixels[_j] == 1 {
+                            self.gfx[x][y] = pixels[_j] ^ self.gfx[x][y];
+                            if self.gfx[x][y] == 0 { self.v[15] = 1 } else { self.v[15] = 0 }
+                        }
+                    }
+                }
+            },
             14 => 
                 match op[2] {
-                    9  => println!("Skip the following instruction if the key corresponding to the hex value currently stored in register VX is pressed"),
-                    10 => println!("Skip the following instruction if the key corresponding to the hex value currrently stored in register VX is not pressed"),
+                    9  => { // Skip next instruction if key with the value of Vx is pressed;
+                        if self.key[self.v[op[1]] as usize] == 1 {
+                            self.pc += 2;
+                        }
+                    },
+                    10 => { // Skip next instruction if key with the value of Vx is not pressed;
+                        if self.key[self.v[op[1]] as usize] == 0 {
+                            self.pc += 2;
+                        }
+                    },
                     _  => println!("No equivalent operation for supplied opcode!")
                 },
             15 =>
                 match (op[2], op[3]) {
-                    (0,  7) => println!("Store the current value of the delay timer in register VX"),
-                    (0, 10) => println!("Wait for a keypress and store the result in register VX"),
-                    (1,  5) => println!("Set the delay timer to the value of reigster VX"),
-                    (1,  8) => println!("Set the sound timer to the value of register VX"),
-                    (1, 14) => println!("Add the value stored in register VX to register index I"),
-                    (2,  9) => println!("Set I to the memory address of the sprite data corresponding to the hexadecimal digit stored in register VX"),
-                    (3,  3) => println!("Store the binary-coded decimal equivalent of the value stored in register VX at addresses I, I + 1, and I + 2"),
-                    (5,  5) => println!("Store the values of registers V0 to VX inclusive in memory starting at address I\n
-                                            I is set to I + X + 1 after operation"),
-                    (6,  5) => println!("Fill registers V0 to VX inclusive with the values stored in memory at address I\n
-                                            I is set to I + X + 1 after operation"),
+                    (0,  7) => { // Set Vx = delay timer value;
+                        self.v[op[1]] = self.delay_timer; 
+                    },
+                    (0, 10) => { // Wait for a keypress, store the value of the key in Vx;
+                        self.pc -= 2;
+
+                        for i in 0..self.key.len() {
+                            if self.key[i] == 1 {
+                                self.pc += 2;
+                                self.v[op[1]] = self.key[i];
+                            }
+                        }
+                    },
+                    (1,  5) => { // Set delay timer = Vx;
+                        self.delay_timer = self.v[op[1]];
+                    },
+                    (1,  8) => { // Set sound timer = Vx;
+                        self.sound_timer = self.v[op[1]];
+                    },
+                    (1, 14) => { // Set I = I + Vx;
+                        self.i = self.i + self.v[op[1]] as usize;
+                    },
+                    (2,  9) => { // Set I = location of sprite for digit Vx;
+                        self.i = self.v[op[1]] as usize;
+                    },
+                    (3,  3) => { // Store BCD representation of Vx in memory locations I, I + 1, and I + 2;
+                        self.i = self.v[op[1]] as usize / 100;
+                        self.i = (self.v[op[1] + 1] as usize / 10) % 10;
+                        self.i = (self.v[op[1] + 2] as usize % 100) % 10;
+                    },
+                    (5,  5) => { // Store registers V0 -> Vx in memory starting at location I;
+                        let mut _i = self.i;
+                        for n in 0..op[1] {
+                            self.memory[_i] = self.v[n];
+                            _i += 1;
+                        }
+                    },
+                    (6,  5) => { // Read registers V0 -> Vx from memory starting at location I;
+                        let mut _i = self.i;
+                        for n in 0..op[1] {
+                            self.v[n] = self.memory[_i];
+                            _i += 1;
+                        }
+                    },
                     _       => println!("No equivalent operation for supplied opcode!")
                 }
             _  => println!("No opcode!"),
         }
     }
+}
 
-    pub fn dec_to_hex(&mut self, decimal: u16) -> (){
-        let mut quotient = decimal;
-        let mut remainder: u16;
-        let mut hexadecimal: Vec<u16> = Vec::new();
-
-        while quotient != 0 {
-            remainder = quotient % 16;
-
-            hexadecimal.push(remainder);
-
-            quotient = quotient / 16;
-        }
-
-        // not entirely sure how to return the vec! as a usize;
-    }
+fn random_byte() -> u8 {
+    rand::random::<u8>()
 }

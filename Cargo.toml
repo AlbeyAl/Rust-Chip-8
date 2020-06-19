@@ -8,3 +8,4 @@ edition = "2018"
 
 [dependencies]
 piston = "0.50.0"
+rand   = "*"

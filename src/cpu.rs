@@ -1,4 +1,11 @@
-use rand::Rng;
+use std::env;
+use std::fs::File;
+use std::io;
+use std::io::prelude::*;
+use std::io::BufReader;
+use rand;
+
+
 
 pub struct CPU {
     pub opcode: u16, // operation code;
@@ -11,7 +18,8 @@ pub struct CPU {
     pub sound_timer: u8,
     pub stack: [u16; 16],
     pub sp: usize,
-    pub key: [u8; 16]
+    pub key: [u8; 16],
+    pub fontset: [u16; 80]
 }
 
 impl Default for CPU {
@@ -27,7 +35,23 @@ impl Default for CPU {
             sound_timer: 0,
             stack: [0; 16],
             sp: 0,
-            key: [0; 16]
+            key: [0; 16],
+            fontset: [0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
+                      0x20, 0x60, 0x20, 0x20, 0x70, // 1
+                      0xF0, 0x10, 0xF0, 0x10, 0x10, // 2
+                      0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
+                      0x90, 0x90, 0xF0, 0x10, 0x10, // 4
+                      0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
+                      0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
+                      0xF0, 0x10, 0x20, 0x40, 0x40, // 7
+                      0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
+                      0xF0, 0x90 ,0xF0 ,0x10, 0xF0, // 9
+                      0xF0, 0x90, 0xF0, 0x90, 0x90, // A
+                      0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
+                      0xF0, 0x80, 0x80, 0x80, 0xF0, // C
+                      0xE0, 0x90, 0x90, 0x90, 0xE0, // D
+                      0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
+                      0xF0, 0x80, 0xF0, 0x80, 0x80] // F
         }
     }
 }
@@ -45,7 +69,23 @@ impl CPU {
             sound_timer: 0,
             stack: [0; 16],
             sp: 0,
-            key: [0; 16]
+            key: [0; 16],
+            fontset: [0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
+                      0x20, 0x60, 0x20, 0x20, 0x70, // 1
+                      0xF0, 0x10, 0xF0, 0x10, 0x10, // 2
+                      0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
+                      0x90, 0x90, 0xF0, 0x10, 0x10, // 4
+                      0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
+                      0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
+                      0xF0, 0x10, 0x20, 0x40, 0x40, // 7
+                      0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
+                      0xF0, 0x90 ,0xF0 ,0x10, 0xF0, // 9
+                      0xF0, 0x90, 0xF0, 0x90, 0x90, // A
+                      0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
+                      0xF0, 0x80, 0x80, 0x80, 0xF0, // C
+                      0xE0, 0x90, 0x90, 0x90, 0xE0, // D
+                      0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
+                      0xF0, 0x80, 0xF0, 0x80, 0x80] // F
         }
     }
 
@@ -53,11 +93,15 @@ impl CPU {
         self.opcode = _opcode;
         let mut op: [usize; 4] = [0; 4];
 
+        // println!("0x{:x}", _opcode);
+
         // Split opcode into a slice:
         op[0] = ((self.opcode & 0xF000) >> 12) as usize;
         op[1] = ((self.opcode & 0x0F00) >>  8) as usize;
         op[2] = ((self.opcode & 0x00F0) >>  4) as usize;
         op[3] = ( self.opcode & 0x000F)        as usize;
+
+        self.pc += 2;
 
         // Top of the stack is the current sp (stack pointer variable). This is the topmost part of the stack;
 
@@ -107,7 +151,10 @@ impl CPU {
                 self.v[op[1]] = (self.opcode & 0x00FF) as u8;
             },
             7  => { // Set Vx = (Vx + kk);
-                self.v[op[1]] = self.v[op[1]] + (self.opcode & 0x00FF) as u8; // <-- test use -->
+                let kk = (self.opcode & 0x00FF) as u8;
+                let added = u8::overflowing_add(self.v[op[1]], kk);
+
+                self.v[op[1]] = added.0;
             },
             8  => 
                 match op[3] {
@@ -176,21 +223,26 @@ impl CPU {
                 self.v[op[1]] = random_byte() & (self.opcode & 0x0FF) as u8;
             },
             13 => { // Display n-byte sprite starting at memory location I set at (Vx, Vy), and then set VF = collision;
+                let x = (self.v[op[1]] as usize) % 64;
+                let y = (self.v[op[2]] as usize) % 32;
+
                 for i in 0..op[3] {
-                    let pixels: Vec<u8> = Vec::new();
+                    let pixel = self.memory[self.i + i];
 
-                    for j in 0..8 {
-                        let _i: usize = i;
-                        let _j: usize = j;
+                    println!("Pixel at {0}, {1}: {2:x}", x, y, pixel);
 
-                        let x = (_j + self.v[op[1]] as usize) % 64;
-                        let y = (_i + self.v[op[2]] as usize) % 32;
+                    // for j in 0..8 {
+                    //     let _i: usize = i;
+                    //     let _j: usize = j;
 
-                        if pixels[_j] == 1 {
-                            self.gfx[x][y] = pixels[_j] ^ self.gfx[x][y];
-                            if self.gfx[x][y] == 0 { self.v[15] = 1 } else { self.v[15] = 0 }
-                        }
-                    }
+                    //     let x = (_j + self.v[op[1]] as usize) % 64;
+                    //     let y = (_i + self.v[op[2]] as usize) % 32;
+
+                    //     if pixel[_j] == 1 {
+                    //         self.gfx[x][y] = pixels[_j] ^ self.gfx[x][y];
+                    //         if self.gfx[x][y] == 0 { self.v[15] = 1 } else { self.v[15] = 0 }
+                    //     }
+                    // }
                 }
             },
             14 => 
@@ -256,6 +308,38 @@ impl CPU {
                     _       => println!("No equivalent operation for supplied opcode!")
                 }
             _  => println!("No opcode!"),
+        }
+    }
+
+    // NOT SURE
+    pub fn read(&mut self, index: &usize) -> u8 {
+        self.memory[*index]
+    }
+
+    pub fn cycle() {
+        
+    }
+
+    pub fn read_rom(&mut self) {
+        let _opcode: u16 = (self.memory[self.pc] as u16) << 8 | (self.memory[self.pc + 1] as u16);
+
+        self.process_opcode(_opcode);
+    }
+
+    pub fn load_rom(&mut self, name: String) {
+        let dir = env::current_dir().unwrap();
+        let path: String = format!("{}{}{}{}", dir.display(), "\\roms\\", name, ".ch8");
+        
+        let file = File::open(path).unwrap();
+
+        let file_rom: Vec<u8> = file.bytes().collect::<Result<Vec<u8>, _>>().unwrap();
+    
+        // Make sure that the program counter is set to 0x200 (512);
+        let mut _pc = 0x200;
+
+        for i in 0..file_rom.len() {
+            self.memory[_pc] = file_rom[i];
+            _pc += 1;
         }
     }
 }

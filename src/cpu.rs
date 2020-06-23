@@ -13,7 +13,7 @@ pub struct CPU {
     pub v: [u8; 16], // V registers that allow manipulation of data;
     pub i: usize, // 
     pub pc: usize, // program counter;
-    pub gfx: [[u8; 64]; 32], // graphics array that maps out pixels on or off;
+    pub gfx: [[u8; 32]; 64], // graphics array that maps out pixels on or off;
     pub delay_timer: u8,
     pub sound_timer: u8,
     pub stack: [u16; 16],
@@ -30,7 +30,7 @@ impl Default for CPU {
             v: [0; 16],
             i: 0,
             pc: 0x200,
-            gfx: [[0; 64]; 32],
+            gfx: [[0; 32]; 64],
             delay_timer: 0,
             sound_timer: 0,
             stack: [0; 16],
@@ -64,7 +64,7 @@ impl CPU {
             v: [0; 16],
             i: 0,
             pc: 0x200,
-            gfx: [[0; 64]; 32],
+            gfx: [[0; 32]; 64],
             delay_timer: 0,
             sound_timer: 0,
             stack: [0; 16],
@@ -216,33 +216,39 @@ impl CPU {
             10 => { // Set I = nnn;
                 self.i = (self.opcode & 0x0FFF) as usize;
             },
-            11 => { // Jump to location nnn + V0;
+            11 => { // Jump to location nnn + V0;5
                 self.pc = ((self.opcode & 0x0FFF) + (self.v[0]) as u16) as usize;
             },
             12 => { // Set Vx = random byte AND kk;
                 self.v[op[1]] = random_byte() & (self.opcode & 0x0FF) as u8;
             },
             13 => { // Display n-byte sprite starting at memory location I set at (Vx, Vy), and then set VF = collision;
-                let x = (self.v[op[1]] as usize) % 64;
-                let y = (self.v[op[2]] as usize) % 32;
+                for y in 0..op[3] {
+                    let pixel = self.read_mem(self.i + y);
 
-                for i in 0..op[3] {
-                    let pixel = self.memory[self.i + i];
+                    for x in 0..4 {
+                        if pixel.0[x] == 1 {
+                            let loc_x = ((self.v[op[1]] + x as u8) % 64) as usize;
+                            let loc_y = ((self.v[op[2]] + y as u8) % 32) as usize;
 
-                    println!("Pixel at {0}, {1}: {2:x}", x, y, pixel);
+                            self.gfx[loc_x][loc_y] = pixel.0[x] ^ self.gfx[loc_x][loc_y];
 
-                    // for j in 0..8 {
-                    //     let _i: usize = i;
-                    //     let _j: usize = j;
+                            if self.gfx[loc_x][loc_y] == 0 {
+                                self.v[15] = 1;
+                            }
+                        }
 
-                    //     let x = (_j + self.v[op[1]] as usize) % 64;
-                    //     let y = (_i + self.v[op[2]] as usize) % 32;
+                        if pixel.1[x] == 1 {
+                            let loc_x = ((self.v[op[1]] + ((x + 4) % 4) as u8) % 64) as usize;
+                            let loc_y = ((self.v[op[2]] + ((y + 4) % 4) as u8) % 32) as usize;
 
-                    //     if pixel[_j] == 1 {
-                    //         self.gfx[x][y] = pixels[_j] ^ self.gfx[x][y];
-                    //         if self.gfx[x][y] == 0 { self.v[15] = 1 } else { self.v[15] = 0 }
-                    //     }
-                    // }
+                            self.gfx[loc_x][loc_y] = pixel.1[x] ^ self.gfx[loc_x][loc_y];
+
+                            if self.gfx[loc_x][loc_y] == 0 {
+                                self.v[15] = 1;
+                            }
+                        }
+                    }
                 }
             },
             14 => 
@@ -311,13 +317,56 @@ impl CPU {
         }
     }
 
-    // NOT SURE
-    pub fn read(&mut self, index: &usize) -> u8 {
-        self.memory[*index]
-    }
-
     pub fn cycle() {
         
+    }
+
+    pub fn read_mem(&mut self, index: usize) -> ([u8; 4], [u8; 4]) {
+        let mut results = ([0; 4], [0; 4]);
+        let nibble_1 = self.memory[index] & 0xF;
+        let nibble_2 = self.memory[index] & 0x0F << 1;
+
+        match nibble_1 {
+            0  => results.0 = [0, 0, 0, 0],
+            1  => results.0 = [0, 0, 0, 1],
+            2  => results.0 = [0, 0, 1, 0],
+            3  => results.0 = [0, 0, 1, 1],
+            4  => results.0 = [0, 1, 0, 0],
+            5  => results.0 = [0, 1, 0, 1],
+            6  => results.0 = [0, 1, 1, 0],
+            7  => results.0 = [0, 1, 1, 1],
+            8  => results.0 = [1, 0, 0, 0],
+            9  => results.0 = [1, 0, 0, 1],
+            10 => results.0 = [1, 0, 1, 0],
+            11 => results.0 = [1, 0, 1, 1],
+            12 => results.0 = [1, 1, 0, 0],
+            13 => results.0 = [1, 1, 0, 1],
+            14 => results.0 = [1, 1, 1, 0],
+            15 => results.0 = [1, 1, 1, 1],
+            _  => eprintln!("Invalid memory nibble! {}", nibble_1)
+        }
+
+        match nibble_2 {
+            0  => results.1 = [0, 0, 0, 0],
+            1  => results.1 = [0, 0, 0, 1],
+            2  => results.1 = [0, 0, 1, 0],
+            3  => results.1 = [0, 0, 1, 1],
+            4  => results.1 = [0, 1, 0, 0],
+            5  => results.1 = [0, 1, 0, 1],
+            6  => results.1 = [0, 1, 1, 0],
+            7  => results.1 = [0, 1, 1, 1],
+            8  => results.1 = [1, 0, 0, 0],
+            9  => results.1 = [1, 0, 0, 1],
+            10 => results.1 = [1, 0, 1, 0],
+            11 => results.1 = [1, 0, 1, 1],
+            12 => results.1 = [1, 1, 0, 0],
+            13 => results.1 = [1, 1, 0, 1],
+            14 => results.1 = [1, 1, 1, 0],
+            15 => results.1 = [1, 1, 1, 1],
+            _  => eprintln!("Invalid memory nibble! {}", nibble_2)
+        }
+
+        results
     }
 
     pub fn read_rom(&mut self) {

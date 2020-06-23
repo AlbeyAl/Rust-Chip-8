@@ -1,11 +1,8 @@
 use std::env;
 use std::fs::File;
-use std::io;
 use std::io::prelude::*;
-use std::io::BufReader;
 use rand;
-
-
+use std::{thread, time};
 
 pub struct CPU {
     pub opcode: u16, // operation code;
@@ -226,10 +223,13 @@ impl CPU {
                 for y in 0..op[3] {
                     let pixel = self.read_mem(self.i + y);
 
+                    // println!("________________________________");
                     for x in 0..4 {
                         if pixel.0[x] == 1 {
                             let loc_x = ((self.v[op[1]] + x as u8) % 64) as usize;
                             let loc_y = ((self.v[op[2]] + y as u8) % 32) as usize;
+
+                            // println!("pixel_0: {}, {}", loc_x, loc_y);
 
                             self.gfx[loc_x][loc_y] = pixel.0[x] ^ self.gfx[loc_x][loc_y];
 
@@ -239,8 +239,10 @@ impl CPU {
                         }
 
                         if pixel.1[x] == 1 {
-                            let loc_x = ((self.v[op[1]] + ((x + 4) % 4) as u8) % 64) as usize;
-                            let loc_y = ((self.v[op[2]] + ((y + 4) % 4) as u8) % 32) as usize;
+                            let loc_x = ((self.v[op[1]] + (x + 4) as u8) % 64) as usize;
+                            let loc_y = ((self.v[op[2]] + y as u8) % 32) as usize;
+
+                            // println!("pixel_1: {}, {}", loc_x, loc_y);
 
                             self.gfx[loc_x][loc_y] = pixel.1[x] ^ self.gfx[loc_x][loc_y];
 
@@ -249,6 +251,7 @@ impl CPU {
                             }
                         }
                     }
+                    // println!("________________________________");
                 }
             },
             14 => 
@@ -293,9 +296,9 @@ impl CPU {
                         self.i = self.v[op[1]] as usize;
                     },
                     (3,  3) => { // Store BCD representation of Vx in memory locations I, I + 1, and I + 2;
-                        self.i = self.v[op[1]] as usize / 100;
-                        self.i = (self.v[op[1] + 1] as usize / 10) % 10;
-                        self.i = (self.v[op[1] + 2] as usize % 100) % 10;
+                        self.memory[self.i as usize] = self.v[op[1]] / 100;
+                        self.memory[self.i as usize + 1] = (self.v[op[1]] / 10) % 10;
+                        self.memory[self.i as usize + 2] = (self.v[op[1]] % 100) % 10;
                     },
                     (5,  5) => { // Store registers V0 -> Vx in memory starting at location I;
                         let mut _i = self.i;
@@ -317,53 +320,66 @@ impl CPU {
         }
     }
 
-    pub fn cycle() {
-        
+    pub fn cycle(&mut self) {
+        self.read_rom();
+
+        if self.delay_timer > 0 {
+            self.delay_timer -= 1;
+        }
+
+        if self.sound_timer > 0 {
+            self.sound_timer -= 1;
+        }
     }
 
     pub fn read_mem(&mut self, index: usize) -> ([u8; 4], [u8; 4]) {
         let mut results = ([0; 4], [0; 4]);
-        let nibble_1 = self.memory[index] & 0xF;
-        let nibble_2 = self.memory[index] & 0x0F << 1;
+        let nibble_1 = (self.memory[index] & 0xF0) >> 4;
+        let nibble_2 =  self.memory[index] & 0x0F;
 
         match nibble_1 {
-            0  => results.0 = [0, 0, 0, 0],
-            1  => results.0 = [0, 0, 0, 1],
-            2  => results.0 = [0, 0, 1, 0],
-            3  => results.0 = [0, 0, 1, 1],
-            4  => results.0 = [0, 1, 0, 0],
-            5  => results.0 = [0, 1, 0, 1],
-            6  => results.0 = [0, 1, 1, 0],
-            7  => results.0 = [0, 1, 1, 1],
-            8  => results.0 = [1, 0, 0, 0],
-            9  => results.0 = [1, 0, 0, 1],
-            10 => results.0 = [1, 0, 1, 0],
-            11 => results.0 = [1, 0, 1, 1],
-            12 => results.0 = [1, 1, 0, 0],
-            13 => results.0 = [1, 1, 0, 1],
-            14 => results.0 = [1, 1, 1, 0],
-            15 => results.0 = [1, 1, 1, 1],
-            _  => eprintln!("Invalid memory nibble! {}", nibble_1)
+            0x0  => results.0 = [0, 0, 0, 0],
+            0x1  => results.0 = [0, 0, 0, 1],
+            0x2  => results.0 = [0, 0, 1, 0],
+            0x3  => results.0 = [0, 0, 1, 1],
+            0x4  => results.0 = [0, 1, 0, 0],
+            0x5  => results.0 = [0, 1, 0, 1],
+            0x6  => results.0 = [0, 1, 1, 0],
+            0x7  => results.0 = [0, 1, 1, 1],
+            0x8  => results.0 = [1, 0, 0, 0],
+            0x9  => results.0 = [1, 0, 0, 1],
+            0xA => results.0 = [1, 0, 1, 0],
+            0xB => results.0 = [1, 0, 1, 1],
+            0xC => results.0 = [1, 1, 0, 0],
+            0xD => results.0 = [1, 1, 0, 1],
+            0xE => results.0 = [1, 1, 1, 0],
+            0xF => results.0 = [1, 1, 1, 1],
+            _  => eprintln!("Invalid memory nibble_1! {}", nibble_1)
         }
 
         match nibble_2 {
-            0  => results.1 = [0, 0, 0, 0],
-            1  => results.1 = [0, 0, 0, 1],
-            2  => results.1 = [0, 0, 1, 0],
-            3  => results.1 = [0, 0, 1, 1],
-            4  => results.1 = [0, 1, 0, 0],
-            5  => results.1 = [0, 1, 0, 1],
-            6  => results.1 = [0, 1, 1, 0],
-            7  => results.1 = [0, 1, 1, 1],
-            8  => results.1 = [1, 0, 0, 0],
-            9  => results.1 = [1, 0, 0, 1],
-            10 => results.1 = [1, 0, 1, 0],
-            11 => results.1 = [1, 0, 1, 1],
-            12 => results.1 = [1, 1, 0, 0],
-            13 => results.1 = [1, 1, 0, 1],
-            14 => results.1 = [1, 1, 1, 0],
-            15 => results.1 = [1, 1, 1, 1],
-            _  => eprintln!("Invalid memory nibble! {}", nibble_2)
+            0x0  => results.1 = [0, 0, 0, 0],
+            0x1  => results.1 = [0, 0, 0, 1],
+            0x2  => results.1 = [0, 0, 1, 0],
+            0x3  => results.1 = [0, 0, 1, 1],
+            0x4  => results.1 = [0, 1, 0, 0],
+            0x5  => results.1 = [0, 1, 0, 1],
+            0x6  => results.1 = [0, 1, 1, 0],
+            0x7  => results.1 = [0, 1, 1, 1],
+            0x8  => results.1 = [1, 0, 0, 0],
+            0x9  => results.1 = [1, 0, 0, 1],
+            0xA => results.1 = [1, 0, 1, 0],
+            0xB => results.1 = [1, 0, 1, 1],
+            0xC => results.1 = [1, 1, 0, 0],
+            0xD => results.1 = [1, 1, 0, 1],
+            0xE => results.1 = [1, 1, 1, 0],
+            0xF => results.1 = [1, 1, 1, 1],
+            _  => eprintln!("Invalid memory nibble_2! {}", nibble_2)
+        }
+
+        println!("Original: {:x} || Nibbles: {} | {}", self.memory[index], nibble_1, nibble_2);
+        for x in 0..4 {
+            println!("Converted: {} | {}", results.0[x], results.1[x]);
         }
 
         results
